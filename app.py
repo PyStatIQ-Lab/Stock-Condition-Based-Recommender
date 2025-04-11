@@ -88,7 +88,7 @@ def calculate_bollinger_bands(prices, window=20, num_std=2):
     lower = sma - (rolling_std * num_std)
     return upper, lower
 
-# Function to analyze stock condition with confidence score
+# Function to analyze stock condition with confidence score and Open-High/Low condition
 def analyze_stock(symbol):
     # Get the latest data
     data = get_stock_data(symbol)
@@ -125,9 +125,9 @@ def analyze_stock(symbol):
         is_bullish_candle = current_price > data['open']
         is_bearish_candle = current_price < data['open']
         
-        # Open-High-Low analysis
-        open_high = data['open'] == data['high']
-        open_low = data['open'] == data['low']
+        # Open-High-Low analysis (your specific condition)
+        open_high_condition = data['open'] == data['high']
+        open_low_condition = data['open'] == data['low']
         
         # Trend analysis
         short_term_trend = "Up" if current_price > sma_20 else "Down"
@@ -158,56 +158,71 @@ def analyze_stock(symbol):
             bb_signal = "Oversold"
             confidence += 5
         
-        # Determine recommendation based on multiple factors
+        # Determine recommendation based on multiple factors including Open-High/Low
         recommendation = "Neutral"
         
-        # Bullish factors
-        bullish_factors = 0
-        if is_bullish_candle: bullish_factors += 1
-        if open_low: bullish_factors += 1
-        if short_term_trend == "Up": bullish_factors += 1
-        if medium_term_trend == "Up": bullish_factors += 1
-        if rsi_signal == "Oversold": bullish_factors += 1
-        if macd_signal == "Bullish": bullish_factors += 1
-        if bb_signal == "Oversold": bullish_factors += 1
-        if volume_spike and is_bullish_candle: bullish_factors += 2
-        
-        # Bearish factors
-        bearish_factors = 0
-        if is_bearish_candle: bearish_factors += 1
-        if open_high: bearish_factors += 1
-        if short_term_trend == "Down": bearish_factors += 1
-        if medium_term_trend == "Down": bearish_factors += 1
-        if rsi_signal == "Overbought": bearish_factors += 1
-        if macd_signal == "Bearish": bearish_factors += 1
-        if bb_signal == "Overbought": bearish_factors += 1
-        if volume_spike and is_bearish_candle: bearish_factors += 2
-        
-        # Determine final recommendation
-        if bullish_factors - bearish_factors >= 3:
-            recommendation = "Buy"
-            confidence += (bullish_factors - bearish_factors) * 5
-        elif bearish_factors - bullish_factors >= 3:
+        # Strong conditions from your original code
+        if open_high_condition:  # Bearish condition
             recommendation = "Sell"
-            confidence += (bearish_factors - bullish_factors) * 5
+            confidence = max(confidence, 70)  # Boost confidence for this clear pattern
+            stop_loss = round(current_price * 1.02, 2)  # 2% above current price
+            target = round(current_price * 0.96, 2)     # 4% below current price
+            condition = "Open=High (Bearish)"
+        elif open_low_condition:  # Bullish condition
+            recommendation = "Buy"
+            confidence = max(confidence, 70)  # Boost confidence for this clear pattern
+            stop_loss = round(current_price * 0.98, 2)  # 2% below current price
+            target = round(current_price * 1.04, 2)     # 4% above current price
+            condition = "Open=Low (Bullish)"
+        else:
+            # If no clear Open-High/Low pattern, use the multi-factor approach
+            condition = "No clear Open-High/Low pattern"
+            
+            # Bullish factors
+            bullish_factors = 0
+            if is_bullish_candle: bullish_factors += 1
+            if short_term_trend == "Up": bullish_factors += 1
+            if medium_term_trend == "Up": bullish_factors += 1
+            if rsi_signal == "Oversold": bullish_factors += 1
+            if macd_signal == "Bullish": bullish_factors += 1
+            if bb_signal == "Oversold": bullish_factors += 1
+            if volume_spike and is_bullish_candle: bullish_factors += 2
+            
+            # Bearish factors
+            bearish_factors = 0
+            if is_bearish_candle: bearish_factors += 1
+            if short_term_trend == "Down": bearish_factors += 1
+            if medium_term_trend == "Down": bearish_factors += 1
+            if rsi_signal == "Overbought": bearish_factors += 1
+            if macd_signal == "Bearish": bearish_factors += 1
+            if bb_signal == "Overbought": bearish_factors += 1
+            if volume_spike and is_bearish_candle: bearish_factors += 2
+            
+            # Determine final recommendation
+            if bullish_factors - bearish_factors >= 3:
+                recommendation = "Buy"
+                confidence += (bullish_factors - bearish_factors) * 5
+            elif bearish_factors - bullish_factors >= 3:
+                recommendation = "Sell"
+                confidence += (bearish_factors - bullish_factors) * 5
+            
+            # Calculate stop loss and target based on volatility if no Open-High/Low pattern
+            atr = np.mean(np.maximum(high_prices[-14:] - low_prices[-14:], 
+                                   np.abs(high_prices[-14:] - close_prices[-14:]), 
+                                   np.abs(low_prices[-14:] - close_prices[-14:])))
+            
+            if recommendation == "Buy":
+                stop_loss = round(current_price - atr * 1.5, 2)
+                target = round(current_price + atr * 3, 2)
+            elif recommendation == "Sell":
+                stop_loss = round(current_price + atr * 1.5, 2)
+                target = round(current_price - atr * 3, 2)
+            else:
+                stop_loss = None
+                target = None
         
         # Cap confidence between 0 and 100
         confidence = max(0, min(100, confidence))
-        
-        # Calculate stop loss and target based on volatility
-        atr = np.mean(np.maximum(high_prices[-14:] - low_prices[-14:], 
-                               np.abs(high_prices[-14:] - close_prices[-14:]), 
-                               np.abs(low_prices[-14:] - close_prices[-14:])))
-        
-        if recommendation == "Buy":
-            stop_loss = round(current_price - atr * 1.5, 2)
-            target = round(current_price + atr * 3, 2)
-        elif recommendation == "Sell":
-            stop_loss = round(current_price + atr * 1.5, 2)
-            target = round(current_price - atr * 3, 2)
-        else:
-            stop_loss = None
-            target = None
         
         return {
             'Symbol': symbol,
@@ -226,6 +241,7 @@ def analyze_stock(symbol):
             'Confidence (%)': round(confidence),
             'Stop Loss': stop_loss,
             'Target': target,
+            'Condition': condition,
             'Trend (S/M)': f"{short_term_trend}/{medium_term_trend}",
             'Data Freshness': "Real-time" if data['is_real_time'] else "EOD",
             'Last Updated': data['last_updated'].strftime('%Y-%m-%d %H:%M:%S')
@@ -240,7 +256,7 @@ def main():
     st.title("📈 Real-Time Stock Analysis & Recommendation System")
     st.write("""
     This tool provides real-time stock analysis using multiple technical indicators 
-    and generates recommendations with confidence scores.
+    including Open-High/Low conditions, and generates recommendations with confidence scores.
     """)
     
     # Add refresh button
@@ -346,6 +362,12 @@ def main():
                 st.write(f"Buy Recommendations: {rec_counts.get('Buy', 0)}")
                 st.write(f"Sell Recommendations: {rec_counts.get('Sell', 0)}")
                 st.write(f"Neutral Recommendations: {rec_counts.get('Neutral', 0)}")
+                
+                # Count Open-High/Low conditions
+                open_high_count = len(results_df[results_df['Condition'] == "Open=High (Bearish)"])
+                open_low_count = len(results_df[results_df['Condition'] == "Open=Low (Bullish)"])
+                st.write(f"Open=High Patterns Found: {open_high_count}")
+                st.write(f"Open=Low Patterns Found: {open_low_count}")
                 
                 avg_confidence = results_df['Confidence (%)'].mean()
                 st.write(f"Average Confidence: {avg_confidence:.1f}%")
