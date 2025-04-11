@@ -4,4 +4,3 @@ pandas
 numpy
 pandas_ta
 openpyxl
-talib
