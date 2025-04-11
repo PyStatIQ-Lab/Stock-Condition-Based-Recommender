@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 # Function to fetch stock data
 def get_stock_data(symbol, period='1d', interval='1d'):
     try:
-        stock = yf.Ticker(symbol)
+        stock = yf.Ticker(symbol + '.NS')  # Adding .NS for NSE stocks
         hist = stock.history(period=period, interval=interval)
         if hist.empty:
             return None
@@ -152,13 +152,26 @@ def analyze_stock(symbol, timeframe='1d', interval='1d'):
 # Main Streamlit app
 def main():
     st.set_page_config(layout="wide")
-    st.title("📊 Pure yFinance Stock Recommender")
-    st.markdown("Intraday & Swing Trading Recommendations using Technical Indicators")
+    st.title("📊 NSE Stock Analyzer")
+    st.markdown("Technical Analysis for NIFTY Indices")
+    
+    # Load available sheets from Excel
+    try:
+        excel_file = pd.ExcelFile('stocklist.xlsx')
+        sheet_names = excel_file.sheet_names
+    except FileNotFoundError:
+        st.error("Error: stocklist.xlsx file not found. Please ensure it's in the same directory.")
+        return
     
     # Sidebar controls
     with st.sidebar:
-        st.header("Settings")
-        analysis_type = st.radio("Analysis Type", ["Intraday", "Swing"])
+        st.header("Analysis Settings")
+        
+        # Sheet selection
+        selected_sheet = st.selectbox("Select Index", sheet_names)
+        
+        # Analysis type
+        analysis_type = st.radio("Trading Style", ["Intraday", "Swing"])
         
         if analysis_type == "Intraday":
             timeframe = st.selectbox("Timeframe", ["1d", "5d"])
@@ -167,22 +180,34 @@ def main():
             timeframe = st.selectbox("Timeframe", ["1mo", "3mo", "6mo"])
             interval = st.selectbox("Interval", ["1d", "1wk"])
         
-        min_volume = st.number_input("Min Volume (Millions)", min_value=0, value=1)
-        confidence_level = st.select_slider("Min Confidence", ["Low", "Medium", "High"], value="Medium")
+        # Filters
+        min_volume = st.number_input("Minimum Volume (Millions)", min_value=0, value=1)
+        confidence_level = st.select_slider("Minimum Confidence", ["Low", "Medium", "High"], value="Medium")
+        
+        st.markdown("---")
+        st.markdown("**Note:** Analyzing Indian stocks (.NS suffix automatically added)")
     
-    # Load stock list
+    # Load selected sheet
     try:
-        stock_df = pd.read_excel('stocklist.xlsx')
-        symbols = stock_df['Symbol'].unique().tolist()
-    except:
-        st.error("Error loading stock list. Please ensure 'stocklist.xlsx' exists with a 'Symbol' column.")
+        stock_df = pd.read_excel('stocklist.xlsx', sheet_name=selected_sheet)
+        if 'Symbol' not in stock_df.columns:
+            st.error(f"Error: The '{selected_sheet}' sheet doesn't contain a 'Symbol' column.")
+            return
+        
+        symbols = stock_df['Symbol'].dropna().unique().tolist()
+        st.sidebar.success(f"Loaded {len(symbols)} stocks from {selected_sheet}")
+    except Exception as e:
+        st.error(f"Error loading stock list: {str(e)}")
         return
     
     # Analysis button
-    if st.button("Analyze Stocks"):
-        with st.spinner("Analyzing stocks..."):
+    if st.button(f"Analyze {selected_sheet} Stocks", type="primary"):
+        with st.spinner(f"Analyzing {len(symbols)} stocks from {selected_sheet}..."):
             results = []
-            for symbol in symbols:
+            progress_bar = st.progress(0)
+            
+            for i, symbol in enumerate(symbols):
+                progress_bar.progress((i + 1) / len(symbols))
                 result = analyze_stock(symbol, timeframe, interval)
                 if result and float(result['Volume'].replace('M','')) >= min_volume:
                     results.append(result)
@@ -201,7 +226,8 @@ def main():
             filtered_df = results_df[results_df['Conf_Score'] >= min_conf]
             
             # Display results
-            st.subheader(f"Analysis Results ({len(filtered_df)} actionable)")
+            st.subheader(f"{selected_sheet} Analysis Results ({len(filtered_df)} actionable)")
+            st.caption(f"Timeframe: {timeframe} | Interval: {interval} | Confidence: {confidence_level}+")
             
             # Color coding for recommendations
             def color_recommendation(val):
@@ -212,7 +238,7 @@ def main():
             st.dataframe(
                 filtered_df.style.applymap(color_recommendation, subset=['Recommendation']),
                 column_config={
-                    "Price": st.column_config.NumberColumn(format="$%.2f"),
+                    "Price": st.column_config.NumberColumn(format="₹%.2f"),
                     "Change %": st.column_config.NumberColumn(format="%.2f%%"),
                     "RSI": st.column_config.ProgressColumn(
                         format="%.1f",
@@ -221,45 +247,50 @@ def main():
                     ),
                 },
                 hide_index=True,
-                use_container_width=True
+                use_container_width=True,
+                height=min(600, 50 + len(filtered_df) * 35)
             )
             
             # Download buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    label="Download All Results",
-                    data=filtered_df.to_csv(index=False),
-                    file_name=f"stock_recommendations_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
-            with col2:
-                st.download_button(
-                    label="Download Strong Signals Only",
-                    data=filtered_df[filtered_df['Confidence'] == 'High'].to_csv(index=False),
-                    file_name=f"strong_signals_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
+            with st.expander("Download Options"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button(
+                        label="Download All Results",
+                        data=filtered_df.to_csv(index=False),
+                        file_name=f"{selected_sheet}_recommendations_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
+                with col2:
+                    st.download_button(
+                        label="Download Strong Signals Only",
+                        data=filtered_df[filtered_df['Confidence'] == 'High'].to_csv(index=False),
+                        file_name=f"{selected_sheet}_strong_signals_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv"
+                    )
             
             # Show charts for top recommendations
             st.subheader("Top Recommendations")
-            top_recommendations = filtered_df.sort_values(by=['Conf_Score', 'Recommendation'], ascending=False).head(3)
+            top_recommendations = filtered_df.sort_values(
+                by=['Conf_Score', 'Recommendation'], 
+                ascending=[False, False]
+            ).head(3)
             
             for _, row in top_recommendations.iterrows():
                 with st.expander(f"{row['Symbol']} - {row['Recommendation']} (Confidence: {row['Confidence']})"):
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.write(f"**Price:** ${row['Price']}")
-                        st.write(f"**RSI:** {row['RSI']}")
-                        st.write(f"**Trend:** {row['Trend']}")
-                        st.write(f"**Pattern:** {row['Pattern']}")
+                        st.metric("Current Price", f"₹{row['Price']}", f"{row['Change %']}%")
+                        st.metric("RSI", row['RSI'])
                     with col2:
-                        st.write(f"**Stop Loss:** ${row['Stop Loss']}")
-                        st.write(f"**Target:** ${row['Target']}")
-                        st.write(f"**Change:** {row['Change %']}%")
-                        st.write(f"**Volume:** {row['Volume']}")
+                        st.metric("Trend", row['Trend'])
+                        st.metric("Pattern", row['Pattern'])
+                    with col3:
+                        st.metric("Stop Loss", f"₹{row['Stop Loss']}")
+                        st.metric("Target Price", f"₹{row['Target']}")
                     
                     # Price chart
+                    st.write(f"**{row['Symbol']} Price Chart**")
                     chart_data = get_stock_data(row['Symbol'], timeframe, interval)
                     if chart_data is not None:
                         st.line_chart(chart_data['Close'])
