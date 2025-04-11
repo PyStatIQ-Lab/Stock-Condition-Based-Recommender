@@ -2,5 +2,5 @@ streamlit
 yfinance
 pandas
 numpy
-pandas_ta
 openpyxl
+matplotlib
