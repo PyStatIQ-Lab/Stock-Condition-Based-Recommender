@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 # Function to fetch stock data
 def get_stock_data(symbol, period='1d', interval='1d'):
     try:
-        stock = yf.Ticker(symbol + '.NS')  # Adding .NS for NSE stocks
+        stock = yf.Ticker(symbol + '')  # Adding .NS for NSE stocks
         hist = stock.history(period=period, interval=interval)
         if hist.empty:
             return None
