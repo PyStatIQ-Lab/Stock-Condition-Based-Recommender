@@ -1,5 +1,6 @@
-pandas
 yfinance
+pandas
 streamlit
-openpyxl
 pandas_ta
+numpy
+openpyxl
