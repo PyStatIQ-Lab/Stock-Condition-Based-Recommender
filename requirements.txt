@@ -2,4 +2,4 @@ pandas
 yfinance
 streamlit
 openpyxl
-ta
+pandas_ta
