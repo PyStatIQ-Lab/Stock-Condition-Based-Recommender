@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # Function to fetch stock data
 def get_stock_data(symbol, period='1d'):
     try:
-        stock = yf.Ticker(symbol + '.NS')
+        stock = yf.Ticker(symbol + '')
         hist = stock.history(period=period)
         if hist.empty:
             return None
